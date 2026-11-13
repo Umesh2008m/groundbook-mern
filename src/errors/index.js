@@ -93,7 +93,19 @@ class AlreadyCancelled extends DomainError {
   }
 }
 
+/** The shadow clashes with live bookings on the ground: each one named with the range it holds. */
+class Overlap extends DomainError {
+  constructor(clashesWith) {
+    super(409, '/errors/overlap', 'Overlap', 'With setup and teardown counted, the ground is already held then');
+    this.clashesWith = clashesWith;
+  }
+
+  extras() {
+    return { clashesWith: this.clashesWith };
+  }
+}
+
 module.exports = {
   DomainError, ValidationError, NoSuchVenue, NoSuchGround, NoSuchEventType, NoSuchBooking, BadInterval, AlreadyStarted,
-  Cancelled, AlreadyConfirmed, AlreadyOver, AlreadyCancelled,
+  Cancelled, AlreadyConfirmed, AlreadyOver, AlreadyCancelled, Overlap,
 };

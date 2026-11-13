@@ -1,7 +1,7 @@
 'use strict';
 const {
   NoSuchGround, NoSuchEventType, NoSuchBooking, BadInterval, ValidationError, AlreadyStarted, Cancelled, AlreadyConfirmed,
-  AlreadyOver, AlreadyCancelled,
+  AlreadyOver, AlreadyCancelled, Overlap,
 } = require('../errors');
 const { hoursOn } = require('../grounds/hours');
 const { wholeSecond, iso } = require('../time');
@@ -15,6 +15,28 @@ function shadowOf(fromAt, toAt, type) {
     heldFrom: new Date(fromAt.getTime() - type.setupMinutes * MINUTE),
     heldTo: new Date(toAt.getTime() + type.teardownMinutes * MINUTE),
   };
+}
+
+/** Two shadows clash when each starts before the other ends (half-open: touching shadows do not clash). */
+function clash(a, b) {
+  return a.heldFrom < b.heldTo && b.heldFrom < a.heldTo;
+}
+
+/**
+ * Refuses a booking whose shadow clashes with a live booking's on the same ground and date (leaving itself out),
+ * naming each clashing booking and the range it holds. The buffers are read from the event types now.
+ */
+async function refuseClashes({ bookings, grounds }, { bookingId, groundId, fromAt, toAt, type }, now) {
+  const mine = shadowOf(fromAt, toAt, type);
+  const types = new Map((await grounds.eventTypesOf(VENUE)).map((t) => [t.code, t]));
+  const others = await bookings.liveOnDay(VENUE, groundId, iso(fromAt).slice(0, 10), now, bookingId);
+  const clashing = others.map((o) => ({ o, held: shadowOf(o.fromAt, o.toAt, types.get(o.eventTypeId)) }))
+    .filter(({ held }) => clash(mine, held));
+  if (clashing.length) {
+    throw new Overlap(clashing.map(({ o, held }) => ({
+      bookingId: o.bookingId, groundHeldFrom: iso(held.heldFrom), groundHeldTo: iso(held.heldTo),
+    })));
+  }
 }
 
 /** A booking as the API shows it, with its shadow; the club's name stays inside. */
@@ -57,13 +79,18 @@ async function requireBooking(bookings, id) {
   return found;
 }
 
-/** A requested booking is confirmed - only before its interval begins (by the clock, read now). */
-async function confirmBooking({ bookings, clock }, id) {
+/**
+ * A requested booking is confirmed - only before its interval begins (by the clock, read now), and only if its shadow
+ * still clashes with nothing live (a competing request may have been confirmed since).
+ */
+async function confirmBooking({ bookings, grounds, clock }, id) {
   const b = await requireBooking(bookings, id);
   if (b.state === 'cancelled') throw new Cancelled();
   if (b.state === 'confirmed') throw new AlreadyConfirmed();
   const confirmedAt = wholeSecond(clock.now());
   if (confirmedAt >= b.fromAt) throw new AlreadyStarted();
+  const type = await grounds.eventType(VENUE, b.eventTypeId);
+  await refuseClashes({ bookings, grounds }, { bookingId: id, groundId: b.groundId, fromAt: b.fromAt, toAt: b.toAt, type }, confirmedAt);
   await bookings.stamp(id, { state: 'confirmed', confirmedAt });
   return { bookingId: id, state: 'confirmed', confirmedAt: iso(confirmedAt) };
 }
@@ -83,7 +110,7 @@ async function cancelBooking({ bookings, clock }, id) {
 }
 
 function makeBookingService({ bookings, grounds, settings, clock }) {
-  /** A club asks for a slot: a requested booking, held for HOLD_HOURS from now. */
+  /** A club asks for a slot: a requested booking, held for HOLD_HOURS from now, unless its shadow clashes. */
   async function request({ ground: code, event, from, to, club }) {
     const ground = await grounds.ground(VENUE, code);
     if (!ground) throw new NoSuchGround(code);
@@ -93,6 +120,7 @@ function makeBookingService({ bookings, grounds, settings, clock }) {
     const toAt = wholeSecond(new Date(to));
     const requestedAt = wholeSecond(clock.now());
     checkInterval({ ground, type, now: requestedAt }, fromAt, toAt);
+    await refuseClashes({ bookings, grounds }, { bookingId: null, groundId: code, fromAt, toAt, type }, requestedAt);
     const holdUntil = new Date(requestedAt.getTime() + settings.holdHours * 60 * MINUTE);
     const requested = {
       bookingId: await bookings.nextId(VENUE), venueId: VENUE, groundId: code, eventTypeId: event, clubName: club, fromAt, toAt,
@@ -108,8 +136,9 @@ function makeBookingService({ bookings, grounds, settings, clock }) {
   }
 
   return {
-    request, booking,
-    confirm: (id) => confirmBooking({ bookings, clock }, id),
+    request,
+    booking,
+    confirm: (id) => confirmBooking({ bookings, grounds, clock }, id),
     cancel: (id) => cancelBooking({ bookings, clock }, id),
   };
 }

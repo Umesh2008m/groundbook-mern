@@ -36,11 +36,26 @@ async function stamp(bookingId, fields) {
   await Booking.updateOne({ bookingId }, { $set: fields });
 }
 
-/** A ground's bookings that start on this date (UTC), in `from` order. */
-function onDay(venueId, groundId, date) {
+/** The day's start and the next day's, for a date read in UTC. */
+function dayRange(date) {
   const start = new Date(`${date}T00:00:00Z`);
-  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-  return Booking.find({ venueId, groundId, fromAt: { $gte: start, $lt: end } }).sort({ fromAt: 1 }).lean();
+  return { $gte: start, $lt: new Date(start.getTime() + 24 * 60 * 60 * 1000) };
 }
 
-module.exports = { nextId, insert, byId, stamp, onDay };
+/**
+ * The live bookings on a ground and date, leaving out one booking: confirmed ones, and requested ones whose hold has not
+ * passed. One query.
+ */
+function liveOnDay(venueId, groundId, date, now, exceptId) {
+  return Booking.find({
+    venueId, groundId, fromAt: dayRange(date), bookingId: { $ne: exceptId },
+    $or: [{ state: 'confirmed' }, { state: 'requested', holdUntil: { $gte: now } }],
+  }).lean();
+}
+
+/** A ground's bookings that start on this date (UTC), in `from` order. */
+function onDay(venueId, groundId, date) {
+  return Booking.find({ venueId, groundId, fromAt: dayRange(date) }).sort({ fromAt: 1 }).lean();
+}
+
+module.exports = { nextId, insert, byId, stamp, liveOnDay, onDay };
