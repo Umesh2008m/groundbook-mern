@@ -1,5 +1,8 @@
 'use strict';
-const { NoSuchGround, NoSuchEventType, NoSuchBooking, BadInterval, ValidationError } = require('../errors');
+const {
+  NoSuchGround, NoSuchEventType, NoSuchBooking, BadInterval, ValidationError, AlreadyStarted, Cancelled, AlreadyConfirmed,
+  AlreadyOver, AlreadyCancelled,
+} = require('../errors');
 const { hoursOn } = require('../grounds/hours');
 const { wholeSecond, iso } = require('../time');
 
@@ -48,6 +51,37 @@ function checkInterval({ ground, type, now }, fromAt, toAt) {
   }
 }
 
+async function requireBooking(bookings, id) {
+  const found = await bookings.byId(VENUE, id);
+  if (!found) throw new NoSuchBooking(id);
+  return found;
+}
+
+/** A requested booking is confirmed - only before its interval begins (by the clock, read now). */
+async function confirmBooking({ bookings, clock }, id) {
+  const b = await requireBooking(bookings, id);
+  if (b.state === 'cancelled') throw new Cancelled();
+  if (b.state === 'confirmed') throw new AlreadyConfirmed();
+  const confirmedAt = wholeSecond(clock.now());
+  if (confirmedAt >= b.fromAt) throw new AlreadyStarted();
+  await bookings.stamp(id, { state: 'confirmed', confirmedAt });
+  return { bookingId: id, state: 'confirmed', confirmedAt: iso(confirmedAt) };
+}
+
+/**
+ * A requested or confirmed booking is cancelled - only before its interval ends. Once it has begun the cancel is late:
+ * allowed and flagged, and the day keeps the block rather than giving the hour back.
+ */
+async function cancelBooking({ bookings, clock }, id) {
+  const b = await requireBooking(bookings, id);
+  if (b.state === 'cancelled') throw new AlreadyCancelled();
+  const cancelledAt = wholeSecond(clock.now());
+  if (cancelledAt >= b.toAt) throw new AlreadyOver();
+  const late = cancelledAt >= b.fromAt;
+  await bookings.stamp(id, { state: 'cancelled', cancelledAt, lateCancel: late });
+  return { bookingId: id, state: 'cancelled', cancelledAt: iso(cancelledAt), late };
+}
+
 function makeBookingService({ bookings, grounds, settings, clock }) {
   /** A club asks for a slot: a requested booking, held for HOLD_HOURS from now. */
   async function request({ ground: code, event, from, to, club }) {
@@ -69,12 +103,15 @@ function makeBookingService({ bookings, grounds, settings, clock }) {
   }
 
   async function booking(id) {
-    const found = await bookings.byId(VENUE, id);
-    if (!found) throw new NoSuchBooking(id);
+    const found = await requireBooking(bookings, id);
     return shape(found, await grounds.eventType(VENUE, found.eventTypeId));
   }
 
-  return { request, booking };
+  return {
+    request, booking,
+    confirm: (id) => confirmBooking({ bookings, clock }, id),
+    cancel: (id) => cancelBooking({ bookings, clock }, id),
+  };
 }
 
 module.exports = { makeBookingService, shadowOf, shape };

@@ -12,6 +12,9 @@ const Booking = mongoose.model('Booking', new mongoose.Schema({
   state: { type: String, enum: ['requested', 'confirmed', 'cancelled', 'expired'], required: true },
   requestedAt: { type: Date, required: true },
   holdUntil: { type: Date, required: true },
+  confirmedAt: { type: Date, default: null },
+  cancelledAt: { type: Date, default: null },
+  lateCancel: { type: Boolean, default: false },
 }, { collection: 'bookings' }));
 
 /** The next booking id at the venue: 'BK' and a number of at least four digits, BK0001 first. */
@@ -28,6 +31,11 @@ function byId(venueId, bookingId) {
   return Booking.findOne({ venueId, bookingId }).lean();
 }
 
+/** A transition: the booking's new state and the fields stamped with it. */
+async function stamp(bookingId, fields) {
+  await Booking.updateOne({ bookingId }, { $set: fields });
+}
+
 /** A ground's bookings that start on this date (UTC), in `from` order. */
 function onDay(venueId, groundId, date) {
   const start = new Date(`${date}T00:00:00Z`);
@@ -35,4 +43,4 @@ function onDay(venueId, groundId, date) {
   return Booking.find({ venueId, groundId, fromAt: { $gte: start, $lt: end } }).sort({ fromAt: 1 }).lean();
 }
 
-module.exports = { nextId, insert, byId, onDay };
+module.exports = { nextId, insert, byId, stamp, onDay };

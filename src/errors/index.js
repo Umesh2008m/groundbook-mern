@@ -63,6 +63,37 @@ class BadInterval extends DomainError {
   }
 }
 
+class AlreadyStarted extends DomainError {
+  constructor() {
+    super(409, '/errors/already-started', 'Already started', 'The interval has begun; it can no longer be confirmed or moved');
+  }
+}
+
+class Cancelled extends DomainError {
+  constructor() {
+    super(409, '/errors/cancelled', 'Cancelled', 'A cancelled booking cannot be confirmed or moved; request a new one');
+  }
+}
+
+class AlreadyConfirmed extends DomainError {
+  constructor() {
+    super(409, '/errors/already-confirmed', 'Already confirmed', 'The booking is already confirmed');
+  }
+}
+
+class AlreadyOver extends DomainError {
+  constructor() {
+    super(409, '/errors/already-over', 'Already over', 'The interval has ended; it can no longer be cancelled');
+  }
+}
+
+class AlreadyCancelled extends DomainError {
+  constructor() {
+    super(409, '/errors/already-cancelled', 'Already cancelled', 'The booking is already cancelled');
+  }
+}
+
 module.exports = {
-  DomainError, ValidationError, NoSuchVenue, NoSuchGround, NoSuchEventType, NoSuchBooking, BadInterval,
+  DomainError, ValidationError, NoSuchVenue, NoSuchGround, NoSuchEventType, NoSuchBooking, BadInterval, AlreadyStarted,
+  Cancelled, AlreadyConfirmed, AlreadyOver, AlreadyCancelled,
 };

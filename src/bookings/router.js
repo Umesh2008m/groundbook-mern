@@ -23,6 +23,14 @@ function makeBookingRouter(service) {
     res.json(await service.booking(req.params.bookingId));
   });
 
+  router.post('/bookings/:bookingId/confirm', async (req, res) => {
+    res.json(await service.confirm(req.params.bookingId));
+  });
+
+  router.post('/bookings/:bookingId/cancel', async (req, res) => {
+    res.json(await service.cancel(req.params.bookingId));
+  });
+
   return router;
 }
 

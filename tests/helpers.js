@@ -20,7 +20,8 @@ function testDatabase(name) {
       await connect(mongo.getUri(name));
       await seed({ settings, clock });
     },
-    api: () => request(createApp({ settings, clock })),
+    /** Supertest on a fresh app; given a time, its clock stands at that time instead. */
+    api: (at) => request(createApp({ settings, clock: at ? { now: () => new Date(at) } : clock })),
     async stop() {
       await disconnect();
       await mongo.stop();
