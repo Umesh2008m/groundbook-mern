@@ -12,6 +12,7 @@ function loadSettings() {
     host: env.HOST || '127.0.0.1',
     port: Number(env.PORT || 8080),
     seedDir: env.SEED_DIR || path.join(__dirname, '..', 'seed'),
+    holdHours: Number(env.HOLD_HOURS || 24),
   });
 }
 

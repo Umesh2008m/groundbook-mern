@@ -52,4 +52,8 @@ function eventTypesOf(venueId) {
   return EventType.find({ venueId }).lean();
 }
 
-module.exports = { venueExists, addVenue, groundsOf, ground, eventTypesOf };
+function eventType(venueId, code) {
+  return EventType.findOne({ venueId, code }).lean();
+}
+
+module.exports = { venueExists, addVenue, groundsOf, ground, eventTypesOf, eventType };

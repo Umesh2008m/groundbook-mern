@@ -39,4 +39,30 @@ class NoSuchGround extends DomainError {
   }
 }
 
-module.exports = { DomainError, ValidationError, NoSuchVenue, NoSuchGround };
+class NoSuchEventType extends DomainError {
+  constructor(code) {
+    super(400, '/errors/no-such-event-type', 'No such event type', `There is no event type ${code}`);
+  }
+}
+
+class NoSuchBooking extends DomainError {
+  constructor(id) {
+    super(404, '/errors/no-such-booking', 'No such booking', `There is no booking ${id}`);
+  }
+}
+
+/** A valid body asking for an impossible interval. When it is about the ground's hours, it says them. */
+class BadInterval extends DomainError {
+  constructor(detail, hours = null) {
+    super(400, '/errors/bad-interval', 'Bad interval', detail);
+    this.hours = hours;
+  }
+
+  extras() {
+    return this.hours ? { opens: this.hours.opens, closes: this.hours.closes } : {};
+  }
+}
+
+module.exports = {
+  DomainError, ValidationError, NoSuchVenue, NoSuchGround, NoSuchEventType, NoSuchBooking, BadInterval,
+};
